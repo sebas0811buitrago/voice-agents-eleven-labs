@@ -2,6 +2,23 @@ import os
 
 from dotenv import load_dotenv
 from elevenlabs.client import ElevenLabs
+from elevenlabs.types import (
+    AgentConfig,
+    ConversationalConfig,
+    DynamicVariablesConfigOutput,
+    LiteralJsonSchemaProperty,
+    ObjectJsonSchemaPropertyOutput,
+    PromptAgentApiModelOutput,
+    PromptAgentApiModelOutputBackupLlmConfig_Override,
+    PromptAgentApiModelOutputToolsItem_System,
+    PromptAgentApiModelOutputToolsItem_Webhook,
+    TtsConversationalConfigOutput,
+    WebhookToolApiSchemaConfigOutput,
+)
+from elevenlabs.types.system_tool_config_output_params import (
+    SystemToolConfigOutputParams_EndCall,
+    SystemToolConfigOutputParams_VoicemailDetection,
+)
 
 load_dotenv()
 elevenlabs = ElevenLabs(
@@ -81,72 +98,70 @@ If it fails again: say "I'm sorry, something went wrong. An Intoxalock represent
 
 
 """
-tools = [
-    {
-        "type": "webhook",
-        "name": "save_call_result",
-        "description": (
-            "Saves the outcome of this scheduling call to the Mindr system. "
-            "Call this tool before closing every call, without exception — whether a slot was confirmed, "
-            "the shop proposed alternatives, the shop was unavailable, or a technical issue occurred. "
-            "Pass all three fields every time: use an empty string for any field that does not apply."
-        ),
-        "api_schema": {
-            "url": "https://minder.com/save-call-result/{{user_id}}",
-            "method": "POST",
-            "path_params_schema": {
-                "user_id": {
-                    "type": "string",
-                    "description": "Unique identifier for the customer record, injected at call initiation.",
-                }
-            },
-            "request_body_schema": {
-                "type": "object",
-                "properties": {
-                    "confirmed_slot": {
-                        "type": "string",
-                        "description": (
-                            "The appointment slot both parties verbally agreed on. "
-                            "Include the full date and time exactly as confirmed "
-                            "(e.g. 'Monday June 30th at 5am'). "
-                            "Pass an empty string if no slot was confirmed."
-                        ),
-                    },
-                    "shop_suggested_slot_1": {
-                        "type": "string",
-                        "description": (
-                            "The first available slot the shop proposed when all customer-provided slots were rejected. "
-                            "Include the full date and time as stated by the shop "
-                            "(e.g. 'Wednesday July 2nd at 9am'). "
-                            "Pass an empty string if the shop did not suggest an alternative."
-                        ),
-                    },
-                    "shop_suggested_slot_2": {
-                        "type": "string",
-                        "description": (
-                            "A second backup slot proposed by the shop. "
-                            "Include the full date and time as stated by the shop. "
-                            "Pass an empty string if no second alternative was offered."
-                        ),
-                    },
-                },
-                "required": [
-                    "confirmed_slot",
-                    "shop_suggested_slot_1",
-                    "shop_suggested_slot_2",
-                ],
-            },
-        },
-    }
-]
 
-dynamic_variables = {
-    "dynamic_variable_placeholders": {
-        "user_id": "unique identifier for the customer record used to route the call result to the correct account",
-        "user_scheduled_slot_1": "preferred date and time for the customer's Ignition Interlock Device removal appointment",
-        "user_scheduled_slot_2": "alternative date and time for the customer's Ignition Interlock Device removal appointment",
-    }
-}
+voicemail_detection_tool = PromptAgentApiModelOutputToolsItem_System(
+    name="voicemail_detection",
+    description="",
+    params=SystemToolConfigOutputParams_VoicemailDetection(),
+)
+
+end_call_tool = PromptAgentApiModelOutputToolsItem_System(
+    name="end_call",
+    description="",
+    params=SystemToolConfigOutputParams_EndCall(),
+)
+
+save_call_result_tool = PromptAgentApiModelOutputToolsItem_Webhook(
+    name="save_call_result",
+    description=(
+        "Saves the outcome of this scheduling call to the Mindr system. "
+        "Call this tool before closing every call, without exception — whether a slot was confirmed, "
+        "the shop proposed alternatives, the shop was unavailable, or a technical issue occurred. "
+        "Pass all three fields every time: use an empty string for any field that does not apply."
+    ),
+    api_schema=WebhookToolApiSchemaConfigOutput(
+        url="https://minder.com/save-call-result/{{user_id}}",
+        method="POST",
+        path_params_schema={
+            "user_id": LiteralJsonSchemaProperty(
+                type="string",
+                description="Unique identifier for the customer record, injected at call initiation.",
+            )
+        },
+        request_body_schema=ObjectJsonSchemaPropertyOutput(
+            type="object",
+            required=["confirmed_slot", "shop_suggested_slot_1", "shop_suggested_slot_2"],
+            properties={
+                "confirmed_slot": LiteralJsonSchemaProperty(
+                    type="string",
+                    description=(
+                        "The appointment slot both parties verbally agreed on. "
+                        "Include the full date and time exactly as confirmed "
+                        "(e.g. 'Monday June 30th at 5am'). "
+                        "Pass an empty string if no slot was confirmed."
+                    ),
+                ),
+                "shop_suggested_slot_1": LiteralJsonSchemaProperty(
+                    type="string",
+                    description=(
+                        "The first available slot the shop proposed when all customer-provided slots were rejected. "
+                        "Include the full date and time as stated by the shop "
+                        "(e.g. 'Wednesday July 2nd at 9am'). "
+                        "Pass an empty string if the shop did not suggest an alternative."
+                    ),
+                ),
+                "shop_suggested_slot_2": LiteralJsonSchemaProperty(
+                    type="string",
+                    description=(
+                        "A second backup slot proposed by the shop. "
+                        "Include the full date and time as stated by the shop. "
+                        "Pass an empty string if no second alternative was offered."
+                    ),
+                ),
+            },
+        ),
+    ),
+)
 
 AGENT_ID = "agent_9201kvzmk05dfc0atefrhdz75exa"
 
@@ -154,22 +169,30 @@ elevenlabs.conversational_ai.agents.update(
     agent_id=AGENT_ID,
     name="Test Voice Agent Mindr",
     tags=["test", "mindr"],
-    conversation_config={
-        "tts": {"voice_id": "EXAVITQu4vr4xnSDxMaL", "model_id": "eleven_flash_v2"},
-        "agent": {
-            "first_message": "Hi, I am Daisy calling from Intoxalock. We have a customer requesting an installation appointment. The customer has provided some times that work for them. May I check your availability?",
-            "dynamic_variables": dynamic_variables,
-            "prompt": {
-                "prompt": prompt,
-                "llm": "gpt-5-mini",
-                "timezone": "America/New_York",
-                "tools": tools,
-                "backup_llm_config": {
-                    "preference": "override",
-                    "order": ["gpt-5-mini", "claude-sonnet-4"],
-                },
-            },
-        },
-    },
+    conversation_config=ConversationalConfig(
+        tts=TtsConversationalConfigOutput(
+            voice_id="EXAVITQu4vr4xnSDxMaL",
+            model_id="eleven_flash_v2",
+        ),
+        agent=AgentConfig(
+            first_message="Hi, I am Daisy calling from Intoxalock. We have a customer requesting an installation appointment. The customer has provided some times that work for them. May I check your availability?",
+            dynamic_variables=DynamicVariablesConfigOutput(
+                dynamic_variable_placeholders={
+                    "user_id": "unique identifier for the customer record used to route the call result to the correct account",
+                    "user_scheduled_slot_1": "preferred date and time for the customer's Ignition Interlock Device removal appointment",
+                    "user_scheduled_slot_2": "alternative date and time for the customer's Ignition Interlock Device removal appointment",
+                }
+            ),
+            prompt=PromptAgentApiModelOutput(
+                prompt=prompt,
+                llm="gpt-5-mini",
+                timezone="America/New_York",
+                tools=[voicemail_detection_tool, end_call_tool, save_call_result_tool],
+                backup_llm_config=PromptAgentApiModelOutputBackupLlmConfig_Override(
+                    order=["gpt-5-mini", "claude-sonnet-4"],
+                ),
+            ),
+        ),
+    ),
 )
 print("Agent updated:", AGENT_ID)
